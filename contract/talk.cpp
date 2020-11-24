@@ -1,15 +1,13 @@
 #include <eosio/eosio.hpp>
 
-using reaction_type_type = uint8_t;
-
 // tally of available reactions
-struct reaction_tally {
+struct reaction {
 
     enum class type { thumbs_up=0, thumbs_down };
     uint64_t thumbs_up {0};
     uint64_t thumbs_down {0};
 
-    reaction_tally &operator+=(reaction_type_type r) {
+    reaction &operator+=(uint8_t r) {
         switch((type)r) {
             case type::thumbs_up: thumbs_up++; break;
             case type::thumbs_down: thumbs_down++; break;
@@ -17,7 +15,7 @@ struct reaction_tally {
         return *this;
     }
 
-    reaction_tally &operator-=(reaction_type_type r) {
+    reaction &operator-=(uint8_t r) {
         switch((type)r) {
             case type::thumbs_up: thumbs_up--; break;
             case type::thumbs_down: thumbs_down--; break;
@@ -32,7 +30,7 @@ struct [[eosio::table("message"), eosio::contract("talk")]] message {
     uint64_t    reply_to = {}; // Non-0 if this is a reply
     eosio::name user     = {};
     std::string content  = {};
-    reaction_tally stats = {};
+    reaction stats = {};
 
     uint64_t primary_key() const { return id; }
     uint64_t get_reply_to() const { return reply_to; }
@@ -43,7 +41,7 @@ using message_table = eosio::multi_index<
 
 struct [[eosio::table("contributors"), eosio::contract("talk")]] contributors {
     eosio::name name = {};
-    std::map<uint64_t, reaction_type_type> reactions;
+    std::map<uint64_t, uint8_t> reactions;
 
     uint64_t primary_key() const { return name.value; }
 };
@@ -52,13 +50,8 @@ using contributor_table = eosio::multi_index<"contributors"_n, contributors>;
 
 // The contract
 class talk : eosio::contract {
-
-    /* Record a new reaction for a talk
-    *
-    * @param talk      The talk to update
-    * @param reaction  The reaction to update
-    */
-    void record_reaction(uint64_t talk, reaction_type_type r)  {
+    
+    void update_reaction(uint64_t talk, uint8_t r)  {
         message_table table(get_self(), 0);
 
         auto message = table.find(talk);
@@ -76,7 +69,7 @@ class talk : eosio::contract {
     * @param from  The original reaction
     * @param to    The new reaction
     */
-    void change_reaction(uint64_t talk, reaction_type_type from, reaction_type_type to) {
+    void toggle_reaction(uint64_t talk, uint8_t from, uint8_t to) {
         message_table table(get_self(), 0);
 
         auto message = table.find(talk);
@@ -87,21 +80,15 @@ class talk : eosio::contract {
             row.stats += to;
         });
     }
-
-    /* Process a user's reaction
-    *
-    * @param user      The user posting the reaction
-    * @param reply_to  The message the user is reacting to
-    * @param reaction  The user's reaction to the message
-    */
-    void process_reaction(eosio::name user, uint64_t reply_to, reaction_tally::type reaction) {
+    
+    void handle_reaction(eosio::name user, uint64_t reply_to, reaction::type reaction) {
         // check user
         require_auth(user);
 
         // check reply-to
         message_table table(get_self(), 0);
 
-        reaction_type_type r = (reaction_type_type)reaction;
+        uint8_t r = (uint8_t)reaction;
 
         auto message = table.find(reply_to);
         eosio::check(message != table.end(), "No such message to react to");
@@ -113,7 +100,7 @@ class talk : eosio::contract {
             current_reactions.emplace(_self, [&](auto &row) {
                 row.name = user;
                 row.reactions[reply_to] = r;
-                record_reaction(reply_to, r);
+                update_reaction(reply_to, r);
             });
             return;
         } else {
@@ -123,12 +110,12 @@ class talk : eosio::contract {
 
                 // if first time contributing to this talk
                 if(old == row.reactions.end()) {
-                    record_reaction(reply_to, r);
+                    update_reaction(reply_to, r);
                     row.reactions[reply_to] = r;
                 }
                 // if changed mind about reaction
                 else if(old->second != r) {
-                    change_reaction(reply_to, old->second, r);
+                    toggle_reaction(reply_to, old->second, r);
                     old->second = r;
                 }
             });
@@ -160,17 +147,17 @@ class talk : eosio::contract {
             message.reply_to = reply_to;
             message.user     = user;
             message.content  = content;
-            message.stats    = reaction_tally();
+            message.stats    = reaction();
         });
     }
 
     [[eosio::action]]
     void thumbsup(eosio::name user, uint64_t reply_to) {
-        process_reaction(user, reply_to, reaction_tally::type::thumbs_up);
+        handle_reaction(user, reply_to, reaction::type::thumbs_up);
     }
 
     [[eosio::action]]
     void thumbsdown(eosio::name user, uint64_t reply_to) {
-        process_reaction(user, reply_to, reaction_tally::type::thumbs_down);
+        handle_reaction(user, reply_to, reaction::type::thumbs_down);
     }
 };

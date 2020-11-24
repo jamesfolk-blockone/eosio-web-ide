@@ -50,6 +50,27 @@ BOOST_AUTO_TEST_CASE(post) try {
         ("content", "post 3: reply") //
     );
 
+    t.push_action(
+        N(talk), N(thumbsup), N(jane),
+        mutable_variant_object       //
+        ("reply_to", 1)              //
+        ("user", "jane")             //
+    );
+    
+    t.push_action(
+        N(talk), N(thumbsup), N(john),
+        mutable_variant_object       //
+        ("reply_to", 1)              //
+        ("user", "john")             //
+    );
+
+    t.push_action(
+        N(talk), N(thumbsdown), N(jane),
+        mutable_variant_object       //
+        ("reply_to", 1)              //
+        ("user", "jane")             //
+    );
+
     // Can't reply to non-existing message
     BOOST_CHECK_THROW(
         [&] {
@@ -60,6 +81,19 @@ BOOST_AUTO_TEST_CASE(post) try {
                 ("reply_to", 99)             //
                 ("user", "john")             //
                 ("content", "post 3: reply") //
+            );
+        }(),
+        fc::exception);
+    
+
+    // Can't thumbsup a non-existing message
+    BOOST_CHECK_THROW(
+        [&] {
+            t.push_action(
+                N(talk), N(thumbsup), N(john),
+                mutable_variant_object       //
+                ("reply_to", 99)             //
+                ("user", "john")             //
             );
         }(),
         fc::exception);
